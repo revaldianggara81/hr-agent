@@ -12,7 +12,7 @@
 ### Clone Repository
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/revaldianggara81/hr-agent
 cd ai-recruitment-system
 pip install -r requirements
 streamlit run recruitment_agent.py
