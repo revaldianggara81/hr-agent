@@ -1,53 +1,52 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -eo pipefail   # ❗ jangan pakai -u dulu biar tidak terlalu strict
 
 APP="recruitment_agent.py"
 PORT=8502
+
+echo "Starting setup..."
 
 # =============================================================================
 # Step 1: Install dependencies
 # =============================================================================
 if [ -f "requirements.txt" ]; then
     echo "Installing dependencies..."
-    pip install -r requirements.txt --quiet
+    if ! pip install -r requirements.txt; then
+        echo "ERROR: Failed to install dependencies"
+        exit 1
+    fi
 fi
 
 # =============================================================================
-# Step 3: Check .env
+# Step 2: Check .env
 # =============================================================================
 if [ ! -f ".env" ]; then
     echo ""
     echo "WARNING: .env file not found. Please create one before running."
-    echo "Required variables:"
-    echo "  ollama_base_url=http://localhost:11434"
-    echo "  ollama_model=qwen2.5:7b"
-    echo "  zoom_account_id=..."
-    echo "  zoom_client_id=..."
-    echo "  zoom_client_secret=..."
-    echo "  email_sender=..."
-    echo "  email_app_password=..."
-    echo "  company_name=..."
-    echo ""
     exit 1
 fi
 
 # =============================================================================
+# Step 3: Load Ollama URL safely
+# =============================================================================
+OLLAMA_URL=$(grep '^ollama_base_url=' .env | cut -d '=' -f2-)
+
+if [ -z "${OLLAMA_URL}" ]; then
+    OLLAMA_URL="http://localhost:11434"
+fi
+
+echo "Using Ollama URL: ${OLLAMA_URL}"
+
+# =============================================================================
 # Step 4: Check Ollama
 # =============================================================================
-OLLAMA_URL=$(grep -E '^ollama_base_url=' .env | cut -d '=' -f2- | tr -d ' ')
-OLLAMA_URL="${OLLAMA_URL:-http://localhost:11434}"
-
-if ! curl -sf "${OLLAMA_URL}/api/tags" > /dev/null 2>&1; then
-    echo ""
-    echo "WARNING: Ollama does not appear to be running at ${OLLAMA_URL}"
-    echo "Start it with: ollama serve"
-    echo ""
+if ! curl -sf "${OLLAMA_URL}/api/tags" > /dev/null; then
+    echo "WARNING: Ollama not reachable at ${OLLAMA_URL}"
 fi
 
 # =============================================================================
-# Step 5: Run the app
+# Step 5: Run Streamlit
 # =============================================================================
-echo ""
 echo "Starting AI Recruitment System on port ${PORT}..."
 
 streamlit run "${APP}" \
