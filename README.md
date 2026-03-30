@@ -75,7 +75,7 @@ pip install -r requirements.txt
 cp .env.example .env   # or create .env manually
 nano .env
 
-streamlit run v2_app_cv_matching_rekrutment.py --server.port 8502
+streamlit run recruitment_agent.py --server.port 8502
 ```
 
 ---
