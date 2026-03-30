@@ -1,26 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="https://github.com/revaldianggara81/hr-agent"
-REPO_DIR="hr-agent"
 APP="recruitment_agent.py"
 PORT=8502
 
 # =============================================================================
-# Step 1: Clone or update repo
-# =============================================================================
-if [ ! -d "${REPO_DIR}" ]; then
-    echo "Cloning repository from ${REPO_URL}..."
-    git clone "${REPO_URL}" "${REPO_DIR}"
-else
-    echo "Repository already exists. Pulling latest changes..."
-    git -C "${REPO_DIR}" pull
-fi
-
-cd "${REPO_DIR}"
-
-# =============================================================================
-# Step 2: Install dependencies
+# Step 1: Install dependencies
 # =============================================================================
 if [ -f "requirements.txt" ]; then
     echo "Installing dependencies..."
