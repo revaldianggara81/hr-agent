@@ -10,13 +10,18 @@ import pandas as pd
 import re
 
 import streamlit as st
+<<<<<<< HEAD
 from phi.agent import Agent
 from phi.model.openai import OpenAIChat
 from phi.tools.email import EmailTools
 from phi.tools.zoom import ZoomTool
+=======
+from dotenv import load_dotenv
+>>>>>>> addc0a0 (update pipeline)
 from phi.utils.log import logger
 
 
+<<<<<<< HEAD
 class CustomZoomTool(ZoomTool):
     def __init__(self, *, account_id: Optional[str] = None, client_id: Optional[str] = None, client_secret: Optional[str] = None, name: str = "zoom_tool"):
         super().__init__(account_id=account_id, client_id=client_id, client_secret=client_secret, name=name)
@@ -33,24 +38,85 @@ class CustomZoomTool(ZoomTool):
 
         try:
             response = requests.post(self.token_url, headers=headers, data=data, auth=(self.client_id, self.client_secret))
+=======
+
+# =============================================================================
+# Ollama GenAI Helper Class
+# =============================================================================
+class OllamaChat:
+    """Wrapper class for Ollama local LLM inference."""
+
+    def __init__(
+        self,
+        base_url: str = "http://localhost:11434",
+        model: str = "qwen2.5:7b",
+        max_tokens: int = 4000,
+        temperature: float = 0.3,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.max_tokens = max_tokens
+        self.temperature = temperature
+
+    def chat(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+        """Send a chat message and return the response text."""
+        messages = []
+
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+
+        messages.append({"role": "user", "content": prompt})
+
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "num_predict": self.max_tokens,
+                "temperature": self.temperature,
+            },
+        }
+
+        try:
+            response = requests.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=120,
+            )
+>>>>>>> addc0a0 (update pipeline)
             response.raise_for_status()
+            data = response.json()
+            return data.get("message", {}).get("content", "").strip()
 
-            token_info = response.json()
-            self.access_token = token_info["access_token"]
-            expires_in = token_info["expires_in"]
-            self.token_expires_at = time.time() + expires_in - 60
+        except requests.exceptions.ConnectionError:
+            raise RuntimeError(
+                f"Cannot connect to Ollama at {self.base_url}. "
+                "Make sure Ollama is running: `ollama serve`"
+            )
+        except Exception as e:
+            logger.error(f"Ollama chat error: {str(e)}")
+            raise
 
-            self._set_parent_token(str(self.access_token))
-            return str(self.access_token)
+    def is_available(self) -> bool:
+        """Check if Ollama service is reachable."""
+        try:
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            return resp.status_code == 200
+        except Exception:
+            return False
 
-        except requests.RequestException as e:
-            logger.error(f"Error fetching access token: {e}")
-            return ""
+    def list_models(self) -> List[str]:
+        """Return list of available model names from Ollama."""
+        try:
+            resp = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            resp.raise_for_status()
+            data = resp.json()
+            return [m["name"] for m in data.get("models", [])]
+        except Exception:
+            return []
 
-    def _set_parent_token(self, token: str) -> None:
-        if token:
-            self._ZoomTool__access_token = token
 
+<<<<<<< HEAD
 
 def init_session_state() -> None:
     """Initialize session state variables."""
@@ -59,12 +125,92 @@ def init_session_state() -> None:
         'zoom_client_secret': "", 'email_sender': "", 'email_passkey': "",
         'company_name': "", 'custom_role_name': "", 'custom_requirements': "",
         'batch_results': [], 'processing_complete': False
+=======
+# =============================================================================
+# Zoom REST API helpers
+# =============================================================================
+def get_zoom_access_token_s2s(account_id: str, client_id: str, client_secret: str) -> str:
+    """Get Zoom access token (Server-to-Server OAuth)."""
+    resp = requests.post(
+        "https://zoom.us/oauth/token",
+        data={
+            "grant_type": "account_credentials",
+            "account_id": account_id,
+        },
+        auth=(client_id, client_secret),
+        timeout=30,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if "access_token" not in data:
+        raise RuntimeError(f"Zoom token response missing access_token: {data}")
+    return str(data["access_token"])
+
+
+def create_zoom_meeting_rest(
+    *,
+    access_token: str,
+    topic: str,
+    start_time_iso: str,
+    duration_minutes: int = 60,
+    timezone: str = "Asia/Jakarta",
+    agenda: str = "",
+) -> Dict:
+    """Create a scheduled Zoom meeting and return meeting JSON."""
+    payload = {
+        "topic": topic,
+        "type": 2,
+        "start_time": start_time_iso,
+        "duration": duration_minutes,
+        "timezone": timezone,
+        "agenda": agenda,
+        "settings": {
+            "waiting_room": True,
+            "join_before_host": False,
+            "mute_upon_entry": True,
+        },
+    }
+
+    resp = requests.post(
+        "https://api.zoom.us/v2/users/me/meetings",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+        timeout=30,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+# =============================================================================
+# Session State
+# =============================================================================
+def init_session_state() -> None:
+    """Initialize session state from .env."""
+    defaults = {
+        "ollama_base_url": os.getenv("ollama_base_url", "http://localhost:11434"),
+        "ollama_model": os.getenv("ollama_model", "qwen2.5:7b"),
+        "zoom_account_id": os.getenv("zoom_account_id", ""),
+        "zoom_client_id": os.getenv("zoom_client_id", ""),
+        "zoom_client_secret": os.getenv("zoom_client_secret", ""),
+        "email_sender": os.getenv("email_sender", ""),
+        "email_passkey": os.getenv("email_app_password", ""),
+        "company_name": os.getenv("company_name", ""),
+        "custom_role_name": "AI Engineer",
+        "custom_requirements": "",
+        "last_selected_role": "",
+        "batch_results": [],
+        "processing_complete": False,
+>>>>>>> addc0a0 (update pipeline)
     }
     for key, value in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = value
 
 
+<<<<<<< HEAD
 def _get_model() -> OpenAIChat:
     """Return a configured OpenAI model instance."""
     return OpenAIChat(id="gpt-4o", api_key=st.session_state.openai_api_key)
@@ -133,14 +279,63 @@ def create_scheduler_agent() -> Agent:
         ],
         markdown=True,
         show_tool_calls=True
+=======
+# =============================================================================
+# Ollama Client Factory
+# =============================================================================
+def get_ollama_client() -> Optional[OllamaChat]:
+    """Create and return Ollama chat client."""
+    client = OllamaChat(
+        base_url=st.session_state.ollama_base_url,
+        model=st.session_state.ollama_model,
+>>>>>>> addc0a0 (update pipeline)
     )
+    if not client.is_available():
+        st.error(
+            f"Ollama is not reachable at `{st.session_state.ollama_base_url}`. "
+            "Please ensure Ollama is running."
+        )
+        return None
+    return client
 
 
+<<<<<<< HEAD
 @st.cache_data
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     """Extract text from PDF bytes. Cached to avoid re-processing the same file."""
     try:
         pdf_reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
+=======
+# =============================================================================
+# Direct Email Sending via SMTP
+# =============================================================================
+def send_email_direct(receiver_email: str, subject: str, body: str) -> bool:
+    """Send email via SMTP."""
+    try:
+        msg = MIMEMultipart()
+        msg["From"] = f"{st.session_state.company_name} <{st.session_state.email_sender}>"
+        msg["To"] = receiver_email
+        msg["Subject"] = subject
+        msg.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(st.session_state.email_sender, st.session_state.email_passkey)
+            server.send_message(msg)
+        return True
+    except Exception as e:
+        logger.error(f"Error sending email: {str(e)}")
+        return False
+
+
+# =============================================================================
+# PDF & Text Extraction
+# =============================================================================
+def extract_text_from_pdf(pdf_file) -> str:
+    """Extract text from PDF file."""
+    try:
+        pdf_reader = PyPDF2.PdfReader(pdf_file)
+>>>>>>> addc0a0 (update pipeline)
         text = ""
         for page in pdf_reader.pages:
             text += page.extract_text()
@@ -165,11 +360,33 @@ def extract_email_from_text(text: str) -> Optional[str]:
     return None
 
 
+<<<<<<< HEAD
 def analyze_resume(resume_text: str, requirements: str, analyzer: Agent) -> Tuple[bool, str, dict]:
     """Analyze single resume against requirements."""
     try:
         response = analyzer.run(
             f"""Analyze this resume against the requirements and respond in valid JSON:
+=======
+# =============================================================================
+# Resume Analysis using Ollama
+# =============================================================================
+def analyze_resume(
+    resume_text: str,
+    requirements: str,
+    client: OllamaChat,
+) -> Tuple[bool, str, dict]:
+    """Analyze a single resume against job requirements."""
+    try:
+        system_prompt = (
+            "You are an expert technical recruiter who analyzes resumes. "
+            "Analyze the resume against the provided job requirements. "
+            "Be lenient with candidates who show strong potential. "
+            "Consider project experience as valid experience. "
+            "Value hands-on experience with key technologies. "
+            "Return a JSON response with selection decision and feedback. "
+            "Return ONLY the JSON object without any markdown formatting or code blocks."
+        )
+>>>>>>> addc0a0 (update pipeline)
 
             Role Requirements:
             {requirements}
@@ -200,7 +417,19 @@ def analyze_resume(resume_text: str, requirements: str, analyzer: Agent) -> Tupl
         if not assistant_message:
             raise ValueError("No assistant message found")
 
+<<<<<<< HEAD
         result = json.loads(assistant_message.strip())
+=======
+        response_text = client.chat(user_prompt, system_prompt)
+
+        cleaned = response_text.strip()
+        if cleaned.startswith("```"):
+            cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+            cleaned = re.sub(r"\s*```$", "", cleaned)
+        cleaned = cleaned.strip()
+
+        result = json.loads(cleaned)
+>>>>>>> addc0a0 (update pipeline)
         if not isinstance(result, dict) or not all(k in result for k in ["selected", "feedback"]):
             raise ValueError("Invalid response format")
 
@@ -211,6 +440,7 @@ def analyze_resume(resume_text: str, requirements: str, analyzer: Agent) -> Tupl
         return False, f"Error: {str(e)}", {}
 
 
+<<<<<<< HEAD
 def send_selection_email(email_agent: Agent, role: str) -> None:
     """Send selection email to candidate."""
     email_agent.run(
@@ -222,9 +452,112 @@ def send_selection_email(email_agent: Agent, role: str) -> None:
         3. Mention interview details coming soon
         4. End with: best,\\nthe ai recruiting team
         """
+=======
+# =============================================================================
+# Email Drafting with Ollama
+# =============================================================================
+def draft_email_with_ollama(
+    client: OllamaChat,
+    email_type: str,
+    role: str,
+    feedback: str = "",
+    candidate_email: str = "",
+    candidate_name: str = "",
+    interview_details: str = "",
+) -> Tuple[str, str]:
+    """Draft email content using Ollama. Returns (subject, body)."""
+    greeting_name = (
+        candidate_name
+        if candidate_name
+        else (candidate_email.split("@")[0] if candidate_email else "there")
+    )
+
+    if email_type == "selection":
+        prompt = f"""Draft a selection email for the {role} position.
+
+Greeting: Start with "hi {greeting_name},"
+
+Style: all lowercase, casual but professional, human tone.
+
+Include:
+1. Congratulate on selection
+2. Explain next steps
+3. Mention interview details coming soon
+4. End with: best,\\nthe ai recruiting team
+
+Return ONLY the email body text, no subject line, no quotes."""
+
+    elif email_type == "rejection":
+        prompt = f"""Draft a rejection email for the {role} position.
+
+Greeting: Start with "hi {greeting_name},"
+
+Style: all lowercase, empathetic, human tone.
+
+Include:
+1. Thank for applying
+2. Include this feedback: {feedback}
+3. Encourage upskilling
+4. Suggest learning resources
+5. End with: best,\\nthe ai recruiting team
+
+Return ONLY the email body text, no subject line, no quotes."""
+
+    elif email_type == "interview_confirmation":
+        prompt = f"""Draft an interview confirmation email for the {role} position.
+
+Greeting: Start with "hi {greeting_name},"
+
+Style: professional but friendly.
+
+Include these details:
+{interview_details}
+
+Notes to include:
+- Join 5 minutes early
+- Timezone converter: https://www.timeanddate.com/worldclock/converter.html
+- Be confident and prepare well!
+
+End with: best,\\nthe ai recruiting team
+
+Return ONLY the email body text, no subject line, no quotes."""
+    else:
+        prompt = f"Draft a professional email about: {email_type}"
+
+    system_prompt = "You are a professional recruitment coordinator. Draft concise, human-sounding emails."
+    body = client.chat(prompt, system_prompt)
+
+    subject_map = {
+        "selection": f"Congratulations! You've been selected for {role}",
+        "rejection": f"Update on your {role} application",
+        "interview_confirmation": f"Interview Confirmation - {role} Position",
+    }
+    subject = subject_map.get(email_type, f"Update regarding {role}")
+
+    return subject, body.strip()
+
+
+# =============================================================================
+# Send Emails
+# =============================================================================
+def send_selection_email(
+    role: str,
+    candidate_email: str,
+    client: OllamaChat,
+    candidate_name: str = "",
+) -> bool:
+    """Send selection email to candidate."""
+    subject, body = draft_email_with_ollama(
+        client,
+        "selection",
+        role,
+        candidate_email=candidate_email,
+        candidate_name=candidate_name,
+>>>>>>> addc0a0 (update pipeline)
     )
 
 
+<<<<<<< HEAD
 def send_rejection_email(email_agent: Agent, role: str, feedback: str) -> None:
     """Send rejection email with feedback."""
     email_agent.run(
@@ -238,9 +571,27 @@ def send_rejection_email(email_agent: Agent, role: str, feedback: str) -> None:
         5. Suggest learning resources
         6. End with: best,\\nthe ai recruiting team
         """
+=======
+def send_rejection_email(
+    role: str,
+    feedback: str,
+    candidate_email: str,
+    client: OllamaChat,
+    candidate_name: str = "",
+) -> bool:
+    """Send rejection email with feedback."""
+    subject, body = draft_email_with_ollama(
+        client,
+        "rejection",
+        role,
+        feedback=feedback,
+        candidate_email=candidate_email,
+        candidate_name=candidate_name,
+>>>>>>> addc0a0 (update pipeline)
     )
 
 
+<<<<<<< HEAD
 def schedule_interview(scheduler: Agent, candidate_email: str, email_agent: Agent, role: str) -> Tuple[bool, str]:
     """Schedule interview and send confirmation. Returns (success, zoom_link)."""
     try:
@@ -274,9 +625,30 @@ def schedule_interview(scheduler: Agent, candidate_email: str, email_agent: Agen
         except Exception as e:
             logger.warning(f"Could not parse meeting response: {e}")
 
+=======
+# =============================================================================
+# Interview Scheduling
+# =============================================================================
+def schedule_interview(
+    candidate_email: str,
+    role: str,
+    client: OllamaChat,
+    candidate_name: str = "",
+) -> Tuple[bool, str]:
+    """Schedule interview via Zoom REST API and send confirmation email."""
+    try:
+        jakarta_tz = pytz.timezone("Asia/Jakarta")
+        current_time_jkt = datetime.now(jakarta_tz)
+        interview_time = (current_time_jkt + timedelta(days=1)).replace(
+            hour=11, minute=0, second=0, microsecond=0
+        )
+
+        formatted_time_iso = interview_time.strftime("%Y-%m-%dT%H:%M:%S")
+>>>>>>> addc0a0 (update pipeline)
         pretty_date = interview_time.strftime("%A, %d %B %Y")
         pretty_time = interview_time.strftime("%I:%M %p")
 
+<<<<<<< HEAD
         email_agent.run(
             f"""Send interview confirmation to {candidate_email}:
 
@@ -301,20 +673,83 @@ def schedule_interview(scheduler: Agent, candidate_email: str, email_agent: Agen
             """
         )
         return True, meeting_link
+=======
+        meeting_link = "Zoom link not available"
+        meeting_id = "N/A"
+
+        try:
+            account_id = st.session_state.zoom_account_id
+            client_id = st.session_state.zoom_client_id
+            client_secret = st.session_state.zoom_client_secret
+
+            if not account_id or not client_id or not client_secret:
+                raise RuntimeError("Missing Zoom credentials in .env.")
+
+            access_token = get_zoom_access_token_s2s(account_id, client_id, client_secret)
+            meeting = create_zoom_meeting_rest(
+                access_token=access_token,
+                topic=f"{role} Technical Interview",
+                start_time_iso=formatted_time_iso,
+                duration_minutes=60,
+                timezone="Asia/Jakarta",
+                agenda=f"Technical interview for {role}. Candidate: {candidate_email}",
+            )
+            meeting_link = meeting.get("join_url", meeting_link)
+            meeting_id = meeting.get("id", meeting_id)
+
+        except Exception as zoom_e:
+            logger.error(f"Zoom meeting creation failed: {zoom_e}")
+
+        interview_details = (
+            f"Date: {pretty_date}\n"
+            f"Time: {pretty_time} (Jakarta Time, UTC+7)\n"
+            f"Duration: 60 minutes\n"
+            f"Zoom Link: {meeting_link}\n"
+            f"Meeting ID: {meeting_id}"
+        )
+
+        subject, body = draft_email_with_ollama(
+            client,
+            "interview_confirmation",
+            role,
+            candidate_email=candidate_email,
+            candidate_name=candidate_name,
+            interview_details=interview_details,
+        )
+        send_email_direct(candidate_email, subject, body)
+
+        return True, interview_time_str
+>>>>>>> addc0a0 (update pipeline)
 
     except Exception as e:
         logger.error(f"Error scheduling interview: {str(e)}")
         return False, ""
 
 
+<<<<<<< HEAD
 def process_batch_applications(candidates_data: List[Dict], role_name: str, requirements: str) -> List[Dict]:
     """Process multiple applications at once with robust per-candidate error handling."""
+=======
+# =============================================================================
+# Batch Processing
+# =============================================================================
+def process_batch_applications(
+    candidates_data: List[Dict], role_name: str, requirements: str
+) -> List[Dict]:
+    """Process multiple applications in sequence."""
+>>>>>>> addc0a0 (update pipeline)
     results = []
     processing_errors = []
     analyzer = create_resume_analyzer()
 
+<<<<<<< HEAD
     if not analyzer:
         st.error("Failed to create analyzer")
+=======
+    client = get_ollama_client()
+    if not client:
+        st.error("Failed to connect to Ollama.")
+>>>>>>> addc0a0 (update pipeline)
         return results
 
     progress_bar = st.progress(0)
@@ -323,6 +758,7 @@ def process_batch_applications(candidates_data: List[Dict], role_name: str, requ
     for idx, candidate in enumerate(candidates_data):
         status_text.text(f"Processing {candidate['email']} ({idx + 1}/{len(candidates_data)})...")
 
+<<<<<<< HEAD
         try:
             is_selected, feedback, analysis_details = analyze_resume(
                 candidate['resume_text'],
@@ -346,6 +782,13 @@ def process_batch_applications(candidates_data: List[Dict], role_name: str, requ
             })
             progress_bar.progress((idx + 1) / len(candidates_data))
             continue
+=======
+        is_selected, feedback, analysis_details = analyze_resume(
+            candidate["resume_text"],
+            requirements,
+            client,
+        )
+>>>>>>> addc0a0 (update pipeline)
 
         result = {
             'email': candidate['email'],
@@ -360,6 +803,7 @@ def process_batch_applications(candidates_data: List[Dict], role_name: str, requ
         }
 
         try:
+<<<<<<< HEAD
             email_agent = create_email_agent(candidate['email'])
 
             if is_selected:
@@ -373,6 +817,31 @@ def process_batch_applications(candidates_data: List[Dict], role_name: str, requ
             else:
                 send_rejection_email(email_agent, role_name, feedback)
                 result['email_sent'] = True
+=======
+            if is_selected:
+                result["email_sent"] = send_selection_email(
+                    role_name,
+                    candidate["email"],
+                    client,
+                    candidate_name=candidate_name,
+                )
+                scheduled, interview_time = schedule_interview(
+                    candidate["email"],
+                    role_name,
+                    client,
+                    candidate_name=candidate_name,
+                )
+                result["interview_scheduled"] = scheduled
+                result["interview_time"] = interview_time
+            else:
+                result["email_sent"] = send_rejection_email(
+                    role_name,
+                    feedback,
+                    candidate["email"],
+                    client,
+                    candidate_name=candidate_name,
+                )
+>>>>>>> addc0a0 (update pipeline)
 
         except Exception as e:
             err_msg = f"{candidate['email']} ({candidate['filename']}): Email/Zoom failed — {str(e)}"
@@ -383,6 +852,7 @@ def process_batch_applications(candidates_data: List[Dict], role_name: str, requ
         results.append(result)
         progress_bar.progress((idx + 1) / len(candidates_data))
 
+<<<<<<< HEAD
     status_text.text("✅ Processing complete!")
 
     if processing_errors:
@@ -445,10 +915,184 @@ def main() -> None:
         'Email Sender': st.session_state.email_sender,
         'Email Password': st.session_state.email_passkey,
         'Company Name': st.session_state.company_name
+=======
+    status_text.text("Processing complete.")
+    return results
+
+
+# =============================================================================
+# Job Role Definitions
+# =============================================================================
+ROLE_REQUIREMENTS = {
+    "AI Engineer": """Required Skills:
+- Python (advanced)
+- Machine Learning frameworks (TensorFlow, PyTorch, or scikit-learn)
+- Deep Learning (CNN, RNN, Transformer architectures)
+- Natural Language Processing (NLP) or Computer Vision
+- Data preprocessing & feature engineering (Pandas, NumPy)
+- Model training, evaluation, and deployment
+- LLM integration (LangChain, or similar)
+- Git version control
+- 2+ years experience in AI/ML
+
+Nice to have:
+- MLOps (MLflow, Kubeflow, or Weights & Biases)
+- Cloud AI services (AWS SageMaker, GCP Vertex AI)
+- RAG (Retrieval-Augmented Generation) implementation
+- Vector databases (FAISS, Pinecone, ChromaDB)
+- Docker & Kubernetes for model serving
+- Fine-tuning LLMs
+- Research paper implementation experience""",
+
+    "Back End Developer": """Required Skills:
+- Python (Django, FastAPI, or Flask) or Java (Spring Boot) or Go
+- Database design & management (PostgreSQL, MySQL)
+- RESTful API design & development
+- Authentication & authorization (OAuth2, JWT)
+- Docker containerization
+- Git version control
+- 3+ years experience
+
+Nice to have:
+- Microservices architecture
+- Message queues (RabbitMQ, Kafka, Redis Streams)
+- Caching strategies (Redis, Memcached)
+- Cloud infrastructure (AWS, GCP, or Azure)
+- Kubernetes orchestration
+- CI/CD pipelines (GitHub Actions, Jenkins)
+- Database optimization & query tuning
+- TDD/BDD practices
+- GraphQL""",
+
+    "Front End Developer": """Required Skills:
+- HTML5, CSS3, JavaScript (ES6+)
+- React.js or Vue.js or Angular
+- Responsive design & mobile-first approach
+- State management (Redux, Vuex, or Zustand)
+- RESTful API integration
+- Git version control
+- 2+ years experience
+
+Nice to have:
+- TypeScript
+- Next.js or Nuxt.js
+- Tailwind CSS or Styled Components
+- Unit testing (Jest, React Testing Library)
+- CI/CD pipeline familiarity
+- Figma/design tool collaboration
+- Web performance optimization (Lighthouse, Core Web Vitals)""",
+
+    "AI Solution Architect": """Required Skills:
+- Strong understanding of AI/ML concepts and architectures
+- Cloud architecture design (AWS, GCP, or Azure)
+- Experience designing end-to-end AI pipelines
+- LLM deployment and integration patterns (RAG, fine-tuning, prompt engineering)
+- API design and microservices architecture
+- Data pipeline design (ETL/ELT)
+- Excellent communication and stakeholder management
+- 5+ years experience in software engineering, 2+ in AI/ML
+
+Nice to have:
+- MLOps and model monitoring experience
+- Enterprise architecture frameworks (TOGAF)
+- Experience with vector databases and semantic search
+- Kubernetes and containerization at scale
+- Security and compliance in AI systems (responsible AI)
+- Pre-sales or technical consulting experience""",
+
+    "Data Engineer": """Required Skills:
+- Python or Scala
+- SQL (advanced - complex queries, optimization, window functions)
+- ETL/ELT pipeline design and implementation
+- Data warehouse concepts (dimensional modeling, star/snowflake schema)
+- Big data technologies (Apache Spark, Hadoop, or Databricks)
+- Cloud data services (AWS Glue, GCP BigQuery, or Azure Data Factory)
+- Git version control
+- 3+ years experience
+
+Nice to have:
+- Apache Kafka or streaming data platforms
+- Orchestration tools (Apache Airflow, Prefect, or Dagster)
+- Data quality frameworks (Great Expectations, dbt tests)
+- NoSQL databases (MongoDB, Cassandra, DynamoDB)
+- Docker & Kubernetes
+- Data governance and cataloging
+- CI/CD for data pipelines""",
+}
+
+
+# =============================================================================
+# Main Streamlit App
+# =============================================================================
+def main() -> None:
+    st.set_page_config(
+        page_title="AI Recruitment System",
+        layout="wide",
+    )
+
+    st.title("AI Agent Recruitment System")
+    st.caption("Powered by Ollama (On-Premise)")
+
+    init_session_state()
+
+    # -------------------------------------------------------------------------
+    # Sidebar Configuration
+    # -------------------------------------------------------------------------
+    with st.sidebar:
+        st.header("Configuration")
+        st.subheader("Ollama Settings")
+
+        st.session_state.ollama_base_url = st.text_input(
+            "Ollama Base URL",
+            value=st.session_state.ollama_base_url,
+            help="Default: http://localhost:11434",
+        )
+
+        # Fetch available models from Ollama
+        available_models: List[str] = []
+        client_check = OllamaChat(base_url=st.session_state.ollama_base_url)
+        if client_check.is_available():
+            available_models = client_check.list_models()
+            st.success("Ollama connected")
+        else:
+            st.warning("Ollama not reachable")
+
+        if available_models:
+            current_model = st.session_state.ollama_model
+            if current_model not in available_models:
+                current_model = available_models[0]
+            st.session_state.ollama_model = st.selectbox(
+                "Model",
+                options=available_models,
+                index=available_models.index(current_model),
+                help="Select a locally available Ollama model",
+            )
+        else:
+            st.session_state.ollama_model = st.text_input(
+                "Model Name",
+                value=st.session_state.ollama_model,
+                help="e.g. qwen2.5:7b",
+            )
+
+        st.markdown("---")
+        st.caption(f"Model: `{st.session_state.ollama_model}`")
+
+    # -------------------------------------------------------------------------
+    # Check required configs
+    # -------------------------------------------------------------------------
+    required_configs = {
+        "Zoom Account ID": st.session_state.zoom_account_id,
+        "Zoom Client ID": st.session_state.zoom_client_id,
+        "Zoom Client Secret": st.session_state.zoom_client_secret,
+        "Email Sender": st.session_state.email_sender,
+        "Email Password": st.session_state.email_passkey,
+        "Company Name": st.session_state.company_name,
+>>>>>>> addc0a0 (update pipeline)
     }
 
     missing_configs = [k for k, v in required_configs.items() if not v]
     if missing_configs:
+<<<<<<< HEAD
         st.warning(f" Please configure: {', '.join(missing_configs)}")
         return
 
@@ -465,6 +1109,37 @@ def main() -> None:
                                   placeholder="e.g., Senior Backend Engineer")
         if role_name:
             st.session_state.custom_role_name = role_name
+=======
+        st.warning(f"Missing config in .env: {', '.join(missing_configs)}")
+        return
+
+    st.info(
+        f"Mode: On-Premise Ollama — Model: `{st.session_state.ollama_model}` — "
+        f"Email via SMTP"
+    )
+
+    st.markdown("---")
+
+    # -------------------------------------------------------------------------
+    # Step 1: Define Job Role
+    # -------------------------------------------------------------------------
+    st.header("Step 1: Define Job Role")
+
+    role_options = list(ROLE_REQUIREMENTS.keys())
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        role_name = st.selectbox(
+            "Select Role / Position",
+            options=role_options,
+            index=role_options.index(st.session_state.custom_role_name)
+            if st.session_state.custom_role_name in role_options
+            else 0,
+            help="Select a predefined role. Requirements will auto-fill below.",
+        )
+        st.session_state.custom_role_name = role_name
+>>>>>>> addc0a0 (update pipeline)
 
     with col2:
         st.info(" Tip: Be specific about the role title")
@@ -490,14 +1165,26 @@ Nice to have:
     if requirements:
         st.session_state.custom_requirements = requirements
 
+<<<<<<< HEAD
     if not role_name or not requirements:
         st.warning(" Please define role name and requirements to continue")
+=======
+    if not requirements:
+        st.warning("Please define requirements to continue.")
+>>>>>>> addc0a0 (update pipeline)
         return
 
     st.markdown("---")
 
+<<<<<<< HEAD
     # Step 2: Upload CVs and Emails
     st.header(" Step 2: Upload CVs and Enter Emails")
+=======
+    # -------------------------------------------------------------------------
+    # Step 2: Upload CVs and Enter Emails
+    # -------------------------------------------------------------------------
+    st.header("Step 2: Upload CVs and Enter Emails")
+>>>>>>> addc0a0 (update pipeline)
 
     uploaded_files = st.file_uploader(
         "Upload Resume PDFs (multiple files allowed)",
@@ -506,14 +1193,23 @@ Nice to have:
     )
 
     if uploaded_files:
+<<<<<<< HEAD
         st.success(f" {len(uploaded_files)} CV(s) uploaded")
+=======
+        st.success(f"{len(uploaded_files)} CV(s) uploaded.")
+>>>>>>> addc0a0 (update pipeline)
 
         with st.expander(" View Uploaded CVs", expanded=True):
             for file in uploaded_files:
-                st.text(f"• {file.name}")
+                st.text(f"- {file.name}")
 
+<<<<<<< HEAD
         st.subheader(" Candidate Emails")
         st.info(" System will auto-detect emails from CVs. You can edit or add missing emails below.")
+=======
+        st.subheader("Candidate Emails")
+        st.caption("System will auto-detect emails from CVs. You can edit or add missing emails below.")
+>>>>>>> addc0a0 (update pipeline)
 
         # Read bytes once; extract_text_from_pdf is cached on bytes content
         cv_data = []
@@ -527,6 +1223,7 @@ Nice to have:
                 'extracted_email': extracted_email
             })
 
+<<<<<<< HEAD
         with st.expander(" Auto-Detected Emails Preview", expanded=True):
             preview_data = []
             for i, data in enumerate(cv_data):
@@ -544,19 +1241,45 @@ Nice to have:
             data['extracted_email'] if data['extracted_email'] else ''
             for data in cv_data
         ])
+=======
+        with st.expander("Auto-Detected Info Preview", expanded=True):
+            preview_data = []
+            for i, data in enumerate(cv_data):
+                preview_data.append(
+                    {
+                        "No": i + 1,
+                        "CV File": data["filename"],
+                        "Detected Name": data["extracted_name"] or "(not found)",
+                        "Name Found": "Yes" if data["extracted_name"] else "No",
+                        "Detected Email": data["extracted_email"] or "(not found)",
+                        "Email Found": "Yes" if data["extracted_email"] else "No",
+                    }
+                )
+            st.dataframe(pd.DataFrame(preview_data), use_container_width=True)
+
+        default_emails = "\n".join(
+            [data["extracted_email"] if data["extracted_email"] else "" for data in cv_data]
+        )
+>>>>>>> addc0a0 (update pipeline)
 
         emails_input = st.text_area(
-            "Candidate Emails (Edit if needed)",
+            "Candidate Emails (edit if needed)",
             value=default_emails,
             height=150,
+<<<<<<< HEAD
             placeholder="candidate1@email.com\ncandidate2@email.com\ncandidate3@email.com",
             help="Auto-detected emails are pre-filled. Edit or add missing emails."
+=======
+            placeholder="candidate1@email.com\ncandidate2@email.com",
+            help="Auto-detected emails are pre-filled. Edit or add missing emails.",
+>>>>>>> addc0a0 (update pipeline)
         )
 
         if emails_input:
             emails = [e.strip() for e in emails_input.split('\n') if e.strip()]
 
             if len(emails) != len(uploaded_files):
+<<<<<<< HEAD
                 st.error(f" Mismatch! You have {len(uploaded_files)} CVs but {len(emails)} emails")
             else:
                 st.success(f" {len(emails)} emails matched with CVs")
@@ -571,6 +1294,28 @@ Nice to have:
                 if st.button(" Process All Applications", type="primary", use_container_width=True):
                     with st.spinner(" Processing applications..."):
                         # Reuse already-read resume text from cv_data (no redundant PDF re-read)
+=======
+                st.error(
+                    f"Mismatch: {len(uploaded_files)} CVs but {len(emails)} emails provided."
+                )
+            else:
+                st.success(f"{len(emails)} emails matched with CVs.")
+
+                with st.expander("CV - Name - Email Mapping", expanded=True):
+                    mapping_df = pd.DataFrame(
+                        {
+                            "CV File": [f.name for f in uploaded_files],
+                            "Candidate Name": [
+                                data["extracted_name"] or "(unknown)" for data in cv_data
+                            ],
+                            "Email": emails,
+                        }
+                    )
+                    st.dataframe(mapping_df, use_container_width=True)
+
+                if st.button("Process All Applications", type="primary", use_container_width=True):
+                    with st.spinner("Processing applications..."):
+>>>>>>> addc0a0 (update pipeline)
                         candidates_data = []
                         for cv, email in zip(cv_data, emails):
                             if cv['resume_text']:
@@ -590,16 +1335,23 @@ Nice to have:
                         st.session_state.processing_complete = True
                         st.rerun()
 
-    # Step 3: Show Results
+    # -------------------------------------------------------------------------
+    # Step 3: Results
+    # -------------------------------------------------------------------------
     if st.session_state.processing_complete and st.session_state.batch_results:
         st.markdown("---")
+<<<<<<< HEAD
         st.header(" Processing Results")
+=======
+        st.header("Processing Results")
+>>>>>>> addc0a0 (update pipeline)
 
         results = st.session_state.batch_results
         selected_count = sum(1 for r in results if r['selected'])
         rejected_count = len(results) - selected_count
         success_rate = (selected_count / len(results) * 100) if results else 0.0
 
+<<<<<<< HEAD
         # --- Real-time Statistics Dashboard ---
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("📋 Total CV", len(results))
@@ -659,10 +1411,39 @@ Nice to have:
                             st.json(result['analysis'])
                         if result.get('error'):
                             st.warning(f"⚠️ Partial error: {result['error']}")
+=======
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Processed", len(results))
+        col2.metric("Selected", selected_count)
+        col3.metric("Rejected", rejected_count)
+
+        st.subheader("Detailed Results")
+
+        if selected_count > 0:
+            st.success(f"Selected Candidates ({selected_count})")
+            for result in results:
+                if result["selected"]:
+                    display_name = result.get("name", "") or result["email"]
+                    with st.expander(f"[Selected] {display_name} — {result['filename']}"):
+                        if result.get("name"):
+                            st.write("**Candidate:**", result["name"])
+                        st.write("**Email:**", result["email"])
+                        st.write("**Feedback:**", result["feedback"])
+                        st.write("**Email Sent:**", "Yes" if result["email_sent"] else "No")
+                        st.write(
+                            "**Interview Scheduled:**",
+                            "Yes" if result["interview_scheduled"] else "No",
+                        )
+                        if result.get("interview_time"):
+                            st.write("**Interview Time:**", result["interview_time"])
+                        if result.get("analysis"):
+                            st.json(result["analysis"])
+>>>>>>> addc0a0 (update pipeline)
 
         if rejected_count > 0:
             st.error(f"Rejected Candidates ({rejected_count})")
             for result in results:
+<<<<<<< HEAD
                 if not result['selected']:
                     with st.expander(f"{result['email']} - {result['filename']}"):
                         st.write("**Feedback:**", result['feedback'])
@@ -671,6 +1452,18 @@ Nice to have:
                             st.json(result['analysis'])
                         if result.get('error'):
                             st.warning(f"⚠️ Partial error: {result['error']}")
+=======
+                if not result["selected"]:
+                    display_name = result.get("name", "") or result["email"]
+                    with st.expander(f"[Rejected] {display_name} — {result['filename']}"):
+                        if result.get("name"):
+                            st.write("**Candidate:**", result["name"])
+                        st.write("**Email:**", result["email"])
+                        st.write("**Feedback:**", result["feedback"])
+                        st.write("**Email Sent:**", "Yes" if result["email_sent"] else "No")
+                        if result.get("analysis"):
+                            st.json(result["analysis"])
+>>>>>>> addc0a0 (update pipeline)
 
         # --- Downloadable Report (all columns) ---
         st.markdown("---")
